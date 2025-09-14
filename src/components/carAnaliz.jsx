@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Upload, CheckCircle, AlertCircle, X, Loader2 } from 'lucide-react';
-import { useGetBatchMutation, usePredictMutation } from '../store/api';
+import { useGetBatchMutation, usePredictMutation, useUpdateThresholdsMutation } from '../store/api';
 
 const ResultTag = ({ status }) => {
   const icons = {
@@ -18,12 +18,36 @@ const ResultTag = ({ status }) => {
 };
 
 export const CarAnalyzer = () => {
+  const [cleanThreshold, setCleanThreshold] = useState('');
+  const [damageThreshold, setDamageThreshold] = useState('');
+  const [updateThresholds, { isSuccess: updateSuccess, isError: updateError }] =
+    useUpdateThresholdsMutation();
+
+  const handleThresholdUpdate = async () => {
+    if (!cleanThreshold || !damageThreshold) {
+      return alert('Заполните оба порога!');
+    }
+
+    try {
+      await updateThresholds({
+        clean_threshold: parseFloat(cleanThreshold),
+        damage_threshold: parseFloat(damageThreshold),
+      }).unwrap();
+
+      if (filesToUpload.length === 1) {
+        predictSingle(filesToUpload[0]);
+      } else if (filesToUpload.length > 1) {
+        predictBatch(filesToUpload);
+      }
+    } catch (error) {
+      console.error('Ошибка при обновлении порогов:', error);
+    }
+  };
+
   const [previews, setPreviews] = useState([]);
   const [filesToUpload, setFilesToUpload] = useState([]);
   const fileInputRef = useRef(null);
   const [combinedData, setCombinedData] = useState([]);
-
-  const [error, setError] = useState(null);
 
   const [predictSingle, { data: singleResult, isLoading: isSingleLoading, error: singleError }] =
     usePredictMutation();
@@ -32,7 +56,9 @@ export const CarAnalyzer = () => {
 
   const isLoading = isSingleLoading || isBatchLoading;
   const apiError = singleError || batchError;
-  const resultsArray = singleResult ? [singleResult] : batchResult ? batchResult.results : null;
+  const resultsArray = useMemo(() => {
+    return singleResult ? [singleResult] : batchResult ? batchResult.results : null;
+  }, [singleResult, batchResult]);
 
   useEffect(() => {
     if (previews.length > 0 && resultsArray && previews.length === resultsArray.length) {
@@ -43,19 +69,19 @@ export const CarAnalyzer = () => {
       setCombinedData(combined);
     }
   }, [previews, resultsArray]);
-  console.log(combinedData);
+
+  const handleReset = () => {
+    setPreviews([]);
+    setFilesToUpload([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleFileChange = (event) => {
     const file = Array.from(event.target.files);
     if (file.length === 0) return;
 
     handleReset();
 
-    if (file.length > 5) {
-      setError('Можно выбрать не более 5 файлов.');
-      return;
-    }
-
-    setError(null);
     setFilesToUpload(file);
 
     const filePreviews = file.map((file) => URL.createObjectURL(file));
@@ -71,13 +97,6 @@ export const CarAnalyzer = () => {
       predictBatch(filesToUpload);
     }
   }, [filesToUpload, predictSingle, predictBatch]);
-
-  const handleReset = () => {
-    setPreviews([]);
-    setFilesToUpload([]);
-    setError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
 
   const triggerFileSelect = () => {
     fileInputRef.current.click();
@@ -122,6 +141,12 @@ export const CarAnalyzer = () => {
             {apiError && (
               <p className="text-red-500 text-sm">Ошибка при анализе: {apiError.status}</p>
             )}
+            {filesToUpload.length > 5 ? (
+              <>
+                <div className="text-red-400 font-bold">можно добавить небольше пяти картинок</div>
+                {handleReset()}
+              </>
+            ) : null}
 
             {combinedData.map((item, index) => (
               <div key={index} className="border rounded-lg overflow-hidden shadow-sm">
@@ -138,7 +163,10 @@ export const CarAnalyzer = () => {
                         status={
                           item.result.cleanliness.prediction === 'dirty' ? 'грязная' : 'чистая'
                         }
-                      />
+                      />{' '}
+                      <span className="text-xs text-gray-500">
+                        (порог: {item.result.cleanliness.threshold_used})
+                      </span>
                     </div>
                     <div className="flex justify-between items-center text-sm mt-1">
                       <span>Целостность:</span>
@@ -150,6 +178,9 @@ export const CarAnalyzer = () => {
                             : 'оптимально'
                         }
                       />
+                      <span className="text-xs text-gray-500">
+                        (порог: {item.result.integrity.threshold_used})
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -159,6 +190,35 @@ export const CarAnalyzer = () => {
                 )}
               </div>
             ))}
+          </div>
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold mb-2 text-gray-700">Обновить пороги модели</h3>
+            <div className="flex flex-col gap-3">
+              <input
+                type="number"
+                step="0.01"
+                placeholder="clean_threshold (например 0.9)"
+                className="border p-2 rounded"
+                value={cleanThreshold}
+                onChange={(e) => setCleanThreshold(e.target.value)}
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="damage_threshold (например 0.2)"
+                className="border p-2 rounded"
+                value={damageThreshold}
+                onChange={(e) => setDamageThreshold(e.target.value)}
+              />
+              <button
+                onClick={handleThresholdUpdate}
+                className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
+              >
+                Обновить пороги
+              </button>
+              {updateSuccess && <p className="text-green-500">Пороги успешно обновлены!</p>}
+              {updateError && <p className="text-red-500">Ошибка при обновлении порогов.</p>}
+            </div>
           </div>
 
           <button
