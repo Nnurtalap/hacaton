@@ -1,1 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+#userfront-mount {
+  display: none !important;
+}

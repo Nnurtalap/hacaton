@@ -1,4 +1,5 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { PredictResult, updateThresholds, BatchResponse } from './storeTypes/apiTypes';
 
 export const sliceAvto = createApi({
   reducerPath: 'api',
@@ -8,9 +9,9 @@ export const sliceAvto = createApi({
     getHealth: builder.query({
       query: () => '/api/v1/health',
     }),
-    predict: builder.mutation({
+    predict: builder.mutation<PredictResult, File>({
       query: (imageFile) => {
-        const formData = new FormData();
+        const formData = new FormData(); 
         formData.append('file', imageFile);
 
         return {
@@ -21,7 +22,7 @@ export const sliceAvto = createApi({
       },
       invalidatesTags: ['Prediction'],
     }),
-    getBatch: builder.mutation({
+    getBatch: builder.mutation<BatchResponse, File[]>({
       query: (imageFile) => {
         const formData = new FormData();
         imageFile.forEach((e) => {
@@ -36,7 +37,7 @@ export const sliceAvto = createApi({
       },
       invalidatesTags: ['Prediction'],
     }),
-    updateThresholds: builder.mutation({
+    updateThresholds: builder.mutation<updateThresholds, any>({
       query: ({ clean_threshold, damage_threshold }) => ({
         url: `/api/v1/update-thresholds?clean_threshold=${clean_threshold}&damage_threshold=${damage_threshold}`,
         method: 'POST',
